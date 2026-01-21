@@ -7,8 +7,8 @@ function updateOutputRef(outRef, text) {
 
 export default function App() {
   const [sdkVersion, setSdkVersion] = useState('9.18.0')
-  const [accessToken, setAccessToken] = useState('Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHBJZCI6ImcyOTRhcCIsImhhc2giOiIwZDhmMTNmMzljZTVkZjlkODJkZjRhOTkxMGVlYjYwZjRmMjU4ZGQ2ZGU2ZmM2OWNlOTY2ZDExYzcxODQzZTkxIiwiaWF0IjoxNzY3ODc3MzUxLCJleHAiOjE3Njc5MDczNTEsImp0aSI6IjdmMGQ5MmU1LWMyZjAtNDk4NS05Y2U5LTNiN2FhZjk1ODI0ZSJ9.OAPPTafHGHDOwoECuMR9_HWt-vYziblgEfkRLnXTa-7p6L0TM7OvjyHIkkV_tQEosuAKmsUTALloULFgW1OOhk8Ls67z__64kguIMHR3QOrzz4Zt9rinnkx_vj6IH89smChpME6osZDQyrksshZ19Lp9Wdjv_hem1bmtnjzpHks')
-  const [workflowId, setWorkflowId] = useState('shivanch_test_workflow')
+  const [accessToken, setAccessToken] = useState('Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHBJZCI6ImcyOTRhcCIsImhhc2giOiIwZDhmMTNmMzljZTVkZjlkODJkZjRhOTkxMGVlYjYwZjRmMjU4ZGQ2ZGU2ZmM2OWNlOTY2ZDExYzcxODQzZTkxIiwidHJhbnNhY3Rpb25JZCI6InRyYW5zMTIzNDU2OTg3Iiwid29ya2Zsb3dJZCI6ImJhdl9mbG93IiwiaWF0IjoxNzY4ODI2ODU4LCJleHAiOjE3Njg5MTMyNTgsImp0aSI6IjFhZWY4MmFkLTc3ZTgtNDA3My05YTI2LWMwMWFkYWM5YmY1YSJ9.Eq0nR-sevi5r-MD1ZVdmPauhG-aIV99iSgPezhFbkoYz4rgwgUnFEZKBcNhVfbhWUDaarAT61HvFOPLT8ZxAHLJ_c1_Wby4Ul-XRwAfJIsueilcfn3gcjP3wRgEoIvVSbJKem3kjmY8N287-vabKBAh6r4lcAYNfyS3YMi_YtnM')
+  const [workflowId, setWorkflowId] = useState('bav_flow')
   const [transactionId, setTransactionId] = useState('')
   const [showLanding, setShowLanding] = useState(true)
   const [output, setOutput] = useState('')
@@ -83,6 +83,11 @@ export default function App() {
       return originalWindowOpen.call(window, url, target, features)
     }
 
+    // Also override top window.open if in iframe
+    if (window.top !== window) {
+      window.top.open = window.open
+    }
+
     console.log('[useEffect] window.open override installed')
     updateOutputRef(outputRef, '✅ window.open override installed')
     setOutput(outputRef.current)
@@ -146,8 +151,14 @@ export default function App() {
       return
     }
 
-    if (!accessToken || !workflowId || !transactionId) {
-      updateOutputRef(outputRef, 'Please provide accessToken, workflowId and transactionId.')
+    // Generate a fresh transactionId for every launch to avoid reusing demo token IDs
+    const newTx = 'demo-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8)
+    setTransactionId(newTx)
+    updateOutputRef(outputRef, `Generated transactionId for this launch: ${newTx}`)
+    setOutput(outputRef.current)
+
+    if (!accessToken || !workflowId) {
+      updateOutputRef(outputRef, 'Please provide accessToken and workflowId.')
       setOutput(outputRef.current)
       return
     }
@@ -169,24 +180,46 @@ export default function App() {
 
     let config
     try {
-      // Some SDKs expect token without Bearer prefix; keep as-is but user can modify
-      console.log('[handleLaunch] Creating HyperKycConfig with:', {
+      // Try with options object including iframe mode
+      const options = {
+        showLanding: !!showLanding,
+        mode: 'iframe'
+      }
+      console.log('[handleLaunch] Creating HyperKycConfig with options:', {
         accessToken: accessToken.substring(0, 20) + '...',
         workflowId,
-        transactionId,
-        showLanding
+        transactionId: newTx,
+        options
       })
-      config = new window.HyperKycConfig(accessToken, workflowId, transactionId, !!showLanding)
-      console.log('[handleLaunch] HyperKycConfig created:', config)
+      // Pass the freshly generated transaction id into the SDK call
+      config = new window.HyperKycConfig(accessToken, workflowId, newTx, false)
+      config.setInputs({
+        "name": "shivansh"
+      })
+      console.log('[handleLaunch] HyperKycConfig created with options and inputs:', config)
     } catch (err) {
-      updateOutputRef(outputRef, 'Failed to create HyperKycConfig: ' + err.message)
+      updateOutputRef(outputRef, 'Failed to create HyperKycConfig with options: ' + err.message + ' — trying fallback.')
       setOutput(outputRef.current)
-      console.error('[handleLaunch] Config creation error:', err)
-      return
+      console.error('[handleLaunch] Config creation error with options:', err)
+      try {
+        // Fallback to original (use generated tx)
+        config = new window.HyperKycConfig(accessToken, workflowId, newTx, !!showLanding)
+        config.setInputs({
+          "name": "shivansh"
+        })
+        console.log('[handleLaunch] HyperKycConfig created fallback with inputs:', config)
+      } catch (err2) {
+        updateOutputRef(outputRef, 'Failed to create HyperKycConfig fallback: ' + err2.message)
+        setOutput(outputRef.current)
+        console.error('[handleLaunch] Config creation error fallback:', err2)
+        return
+      }
     }
 
     const handler = (HyperKycResult) => {
-      const short = `status=${HyperKycResult.status} code=${HyperKycResult.code} message=${HyperKycResult.message}`
+      // Prefer the SDK-returned metadata.transactionId, but fall back to our generated id
+      const returnedTx = (HyperKycResult && HyperKycResult.metadata && HyperKycResult.metadata.transactionId) || newTx
+      const short = `status=${HyperKycResult.status} code=${HyperKycResult.code} message=${HyperKycResult.message} transactionId=${returnedTx}`
       console.log('[SDK Handler] Result received:', HyperKycResult)
       updateOutputRef(outputRef, 'Handler invoked — ' + short)
       setOutput(outputRef.current)
@@ -196,7 +229,7 @@ export default function App() {
     setOutput(outputRef.current)
     console.log('[handleLaunch] Calling HyperKYCModule.launch...')
     
-    // Monitor for iframe creation after launch
+    // Monitor for iframe creation AND modal overlays after launch
     const observer = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
         mutation.addedNodes.forEach((node) => {
@@ -207,6 +240,32 @@ export default function App() {
             if (node.src && !popupUrl) {
               setPopupUrl(node.src)
               setPopupTitle('SDK Iframe')
+            }
+          }
+          // Detect SDK modal overlays (high z-index containers)
+          if (node.nodeType === 1) { // Element node
+            const computedStyle = window.getComputedStyle(node)
+            const zIndex = parseInt(computedStyle.zIndex)
+            const position = computedStyle.position
+            
+            // Check if this is a modal overlay (high z-index, fixed/absolute position)
+            if (zIndex > 1000 && (position === 'fixed' || position === 'absolute')) {
+              console.log('[SDK] Modal overlay detected:', node, 'z-index:', zIndex)
+              updateOutputRef(outputRef, `🎯 SDK modal overlay detected (z-index: ${zIndex})`)
+              setOutput(outputRef.current)
+              
+              // Look for iframe inside the modal
+              const iframe = node.querySelector('iframe')
+              if (iframe && iframe.src) {
+                console.log('[SDK] Found iframe inside modal:', iframe.src)
+                updateOutputRef(outputRef, `📺 Extracted iframe from modal: ${iframe.src}`)
+                setOutput(outputRef.current)
+                setPopupUrl(iframe.src)
+                setPopupTitle('SDK Iframe (from modal)')
+                
+                // Hide the modal overlay since we're displaying the iframe in our panel
+                node.style.display = 'none'
+              }
             }
           }
         })

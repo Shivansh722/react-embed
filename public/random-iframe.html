@@ -1,0 +1,115 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Random Iframe Tester</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Arial;padding:24px}
+    button{padding:8px 12px;margin-right:8px}
+    #controls{display:flex;gap:8px;align-items:center}
+    #frameWrap{margin-top:16px;border:1px solid #ddd;height:70vh;display:flex;align-items:center;justify-content:center}
+    /* Default full-bleed iframe */
+    .frame-full iframe{width:100%;height:100%;border:0}
+
+    /* Mobile device container */
+    .device {
+      width: 390px; /* iPhone 14 width */
+      height: 844px; /* iPhone 14 height */
+      border-radius: 28px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+      overflow: hidden;
+      background: #111;
+      -webkit-mask-image: linear-gradient(#000,#000);
+    }
+    .device iframe{width:100%;height:100%;border:0;display:block}
+
+    /* Centering for smaller viewports */
+    @media (max-width:420px){
+      .device{transform:scale(0.9)}
+    }
+  </style>
+</head>
+<body>
+  <h1>Random Iframe Tester</h1>
+  <p>Click the button to open a random iframe from a set of test URLs (includes a same-origin test page).</p>
+  <div id="controls">
+    <div>
+      <button id="open">Open random iframe</button>
+      <button id="openAuto">Open on load (random)</button>
+    </div>
+    <div>
+      <label><input type="radio" name="mode" value="full" checked> Full</label>
+      <label style="margin-left:8px"><input type="radio" name="mode" value="mobile"> Mobile</label>
+    </div>
+  </div>
+  <div id="info" style="margin-top:12px;color:#555"></div>
+  <div id="frameWrap"></div>
+
+  <script>
+    const candidates = ['/', '/iframe.html', '/test-content.html', 'https://link-kyc.idv.hyperverge.co/?identifier=7f356977-1dfe-46fc-bbc4-91d28d005f35_tre12332545']
+    const wrap = document.getElementById('frameWrap')
+    const info = document.getElementById('info')
+
+    function openRandom() {
+      wrap.innerHTML = ''
+      const src = candidates[Math.floor(Math.random()*candidates.length)]
+      const ifr = document.createElement('iframe')
+      ifr.src = src
+      ifr.title = 'Random test iframe'
+      ifr.onload = () => {
+        info.textContent = 'Iframe loaded: ' + src
+      }
+      ifr.onerror = () => {
+        info.textContent = 'Iframe failed to load (possibly blocked): ' + src
+      }
+
+      const mode = document.querySelector('input[name="mode"]:checked').value
+      if (mode === 'mobile') {
+        const device = document.createElement('div')
+        device.className = 'device'
+        device.appendChild(ifr)
+        wrap.classList.remove('frame-full')
+        wrap.appendChild(device)
+      } else {
+        wrap.classList.add('frame-full')
+        wrap.appendChild(ifr)
+      }
+
+      info.textContent = 'Opening iframe: ' + src + ' (mode=' + mode + ')'
+    }
+
+    // Auto-open the HyperVerge URL in mobile mode on load
+    window.addEventListener('load', () => {
+      document.querySelector('input[name="mode"][value="mobile"]').checked = true
+      wrap.innerHTML = ''
+      const src = 'https://link-kyc.idv.hyperverge.co/?identifier=7f356977-1dfe-46fc-bbc4-91d28d005f35_tre12332545'
+      const ifr = document.createElement('iframe')
+      ifr.src = src
+      ifr.title = 'HyperKYC SDK'
+      ifr.allow = 'camera; microphone; geolocation'
+      ifr.onload = () => {
+        info.textContent = 'Iframe loaded: ' + src
+      }
+      ifr.onerror = () => {
+        info.textContent = 'Iframe failed to load (possibly blocked): ' + src
+      }
+      const device = document.createElement('div')
+      device.className = 'device'
+      device.appendChild(ifr)
+      wrap.classList.remove('frame-full')
+      wrap.appendChild(device)
+      info.textContent = 'Auto-opening HyperKYC SDK in mobile mode...'
+    })
+
+    document.getElementById('open').addEventListener('click', openRandom)
+    document.getElementById('openAuto').addEventListener('click', () => { openRandom(); setInterval(openRandom, 3000) })
+
+    // Listen for messages from iframe
+    window.addEventListener('message', (ev) => {
+      console.log('Parent received message:', ev.data)
+      info.textContent = 'Message from iframe: ' + JSON.stringify(ev.data)
+    })
+  </script>
+</body>
+</html>
